@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using Lab1.Atomics;
 
 namespace Lab1.Algorithms
 {
@@ -9,15 +10,21 @@ namespace Lab1.Algorithms
     {
         private class Node
         {
-            public T Value { get; set; }
-            public Node RightNode { get; set; }
+            public T Data { get; set; }
+            public AtomicReference<Node> RightNode { get; set; }
             public Node LowerNode { get; set; }
 
-            public Node(T value)
+            public Node(T data)
             {
-                Value = value;
-                RightNode = null;
+                Data = data;
+                RightNode = new AtomicReference<Node>(null);
                 LowerNode = null;
+            }
+
+            public Node(T data, AtomicReference<Node> rightNode, Node lowerNode) {
+                Data = data;
+                RightNode = rightNode;
+                LowerNode = lowerNode;
             }
         }
         
@@ -41,76 +48,99 @@ namespace Lab1.Algorithms
             }
         }
         
-        public void Add(T elem) {
+        public void Add(T item) {
+            var previousNode = new List<Node>();
+            var previousRightNode = new List<Node>();
+            var currentNode = _headTop;
             var height = GetNodeHeight();
+            var currentLevel = _maxHeight;
 
-            var currNode = GetHeadNodeByIndex(height - 1);
-            Node prevAddedNode = null;
-            while (currNode != null)
+            while (currentLevel > 0)
             {
-                var rightNode = currNode.RightNode;
-                if (rightNode != null && rightNode.Value.CompareTo(elem) == -1)
+                var rightNode = currentNode.RightNode.Value;
+
+                if (currentLevel <= height)
                 {
-                    currNode = rightNode;
+                    if (rightNode == null || rightNode.Data.CompareTo(item) >= 0)
+                    {
+                        previousNode.Add(currentNode);
+                        previousRightNode.Add(rightNode);
+                    }
+                }
+
+                if (rightNode != null && rightNode.Data.CompareTo(item) < 0)
+                {
+                    currentNode = rightNode;
                 }
                 else
                 {
-                    var node = new Node(elem) {RightNode = rightNode};
-                    currNode.RightNode = node;
-                    currNode = currNode.LowerNode;
-                    if (prevAddedNode != null)
-                    {
-                        prevAddedNode.LowerNode = node;
-                    }
-
-                    prevAddedNode = node;
+                    currentNode = currentNode.LowerNode;
+                    currentLevel--;
                 }
+            }
+
+            Node lowerNode = null;
+            for (var i = previousNode.Count - 1; i >= 0; i--)
+            {
+                var newNode = new Node(item, new AtomicReference<Node>(previousRightNode[i]), null);
+                if (lowerNode != null) newNode.LowerNode = lowerNode;
+                if (!previousNode[i].RightNode.CompareAndSet(newNode, previousRightNode[i])) return;
+                lowerNode = newNode;
             }
 
             Count++;
         }
-        public bool Remove(T elem) {
-            var currNode = GetHeadBottomNode();
+        public bool Remove(T item) {
+            var currentNode = _headTop;
+            var currentLevel = _maxHeight;
+            var towerUnmarked = true;
 
-            while (currNode != null) {
-                var rightNode = currNode.RightNode;
+            while (currentLevel > 0)
+            {
+                var rightNode = currentNode.RightNode.Value;
 
-                if (rightNode != null && rightNode.Value.CompareTo(elem) == -1)
+                if (rightNode != null && rightNode.Data.CompareTo(item) == 0)
                 {
-                    currNode = rightNode;
+                    var nextRightNode = rightNode.RightNode.Value;
+                    if (towerUnmarked)
+                    {
+                        var towerNode = rightNode;
+                        while (towerNode != null)
+                        {
+                            towerNode.RightNode.CompareAndSet(null, towerNode.RightNode.Value);
+                            towerNode = towerNode.LowerNode;
+                        }
+
+                        towerUnmarked = false;
+                    }
+
+                    currentNode.RightNode.CompareAndSet(nextRightNode, rightNode);
                 }
-                else if (rightNode != null && rightNode.Value.CompareTo(elem) == 0)
+
+                if (rightNode != null && rightNode.Data.CompareTo(item) < 0)
                 {
-                    currNode.RightNode = rightNode.RightNode;
-                    currNode = currNode.LowerNode;
+                    currentNode = rightNode;
                 }
                 else
                 {
-                    return false;
+                    currentNode = currentNode.LowerNode;
+                    currentLevel--;
                 }
             }
 
-            Count--;
-            return true;
+            if (!towerUnmarked) Count--;
+            return !towerUnmarked;
         }
         
-        public bool Contains(T elem) {
-            var currNode = GetHeadBottomNode().RightNode;
-
-            while (currNode != null && !currNode.Value.Equals(elem)) {
-                var rightNode = currNode.RightNode;
-
-                if (rightNode != null && rightNode.Value.CompareTo(elem) != 1)
-                {
-                    currNode = rightNode;
-                }
-                else
-                {
-                    currNode = currNode.LowerNode;
-                }
+        public bool Contains(T item) {
+            var currentNode = _headTop;
+            while (currentNode != null) {
+                var rightNode = currentNode.RightNode.Value;
+                if (currentNode.Data != null && currentNode.Data.CompareTo(item) == 0) return true;
+                if (rightNode != null && rightNode.Data.CompareTo(item) <= 0) currentNode = rightNode;
+                else currentNode = currentNode.LowerNode;
             }
-
-            return currNode != null;
+            return false;
         }
         
         public void Clear()
@@ -137,10 +167,10 @@ namespace Lab1.Algorithms
         {
             get
             {
-                var currNode = GetHeadBottomNode().RightNode;
+                var currNode = GetHeadBottomNode().RightNode.Value;
                 while (currNode != null) {
-                    yield return currNode.Value;
-                    currNode = currNode.RightNode;
+                    yield return currNode.Data;
+                    currNode = currNode.RightNode.Value;
                 }
             }
         }
@@ -154,7 +184,8 @@ namespace Lab1.Algorithms
         {
             var currNode = _headTop;
             
-            for (var i = _maxHeight - 1; i > index; i--) {
+            for (var i = _maxHeight - 1; i > index; i--) 
+            {
                 currNode = currNode.LowerNode;
             }
 
@@ -163,7 +194,8 @@ namespace Lab1.Algorithms
         
         private int GetNodeHeight() {
             var level = 1;
-            while (level < _maxHeight && RandomNumberGenerator.GetInt32(0,2) == 0) {
+            while (level < _maxHeight && RandomNumberGenerator.GetInt32(0,2) == 0) 
+            {
                 level++;
             }
             return level;

@@ -55,8 +55,7 @@ namespace Lab1.Algorithms
                 var node = _head.Next;
                 if (node == null) return default;
                 if (_head == _tail) _tail = node;
-                else if (_head.CompareAndSet(node.Next, node)) 
-                    return node.Value;
+                else if (_head.CompareAndSet(node.Next, node)) return node.Value;
             }
         }
 

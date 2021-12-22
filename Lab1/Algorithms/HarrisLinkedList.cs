@@ -21,8 +21,6 @@ public class HarrisLinkedList<T>: ICollection<T> where T: IComparable
 
     public int Count { get; private set; } = 0;
     public bool IsReadOnly => false;
-
-    
     
     public void Add(T item)
     {
