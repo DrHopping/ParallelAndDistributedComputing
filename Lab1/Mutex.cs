@@ -44,7 +44,7 @@ namespace Lab1
                 Thread.Yield();
             }
             
-            Release();
+            Lock();
         }
 
         public void Notify()
